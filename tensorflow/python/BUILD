@@ -700,6 +700,7 @@ tf_gen_op_wrapper_py(
         "LRNGrad",
         "MaxPoolGrad",
         "MaxPoolGradWithArgmax",
+        "AdaptiveMaxPoolGrad",
         "ReluGrad",
         "Relu6Grad",
         "EluGrad",

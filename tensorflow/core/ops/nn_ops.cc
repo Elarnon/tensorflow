@@ -50,6 +50,50 @@ Status InputTensorShapeOrUnknown(InferenceContext* c, int input_idx,
 
 // --------------------------------------------------------------------------
 
+REGISTER_OP("AdaptiveMaxPool")
+    .Input("input: T")
+    .Output("output: T")
+    .Attr("output_shape: list(int) >= 4")
+    .Attr(GetConvnetDataFormatAttrString())
+    .Attr("T: {float, half, double} = DT_FLOAT")
+    .Doc(R"doc(
+Performs adaptive max pooling on the input.
+
+output_shape: The size of the output tensor.
+input: 4-D input to pool over.
+data_format: Specify the data format of the input and output data. With the
+    default format "NHWC", the data is stored in the order of:
+        [batch, in_height, in_width, in_channels].
+    Alternatively, the format could be "NCHW", the data storage order of:
+        [batch, in_channels, in_height, in_width].
+output: The max pooled output tensor.
+)doc");
+
+REGISTER_OP("AdaptiveMaxPoolGrad")
+    .Input("orig_input: T")
+    .Input("orig_output: T")
+    .Input("grad: T")
+    .Output("output: T")
+    .Attr("output_shape: list(int) >= 4")
+    .Attr(GetConvnetDataFormatAttrString())
+    .Attr("T: {float, half} = DT_FLOAT")
+    .Doc(R"doc(
+Computes gradients of the adaptive max pooling function.
+
+output_shape: The size of the output tensor.
+data_format: Specify the data format of the input and output data. With the
+    default format "NHWC", the data is stored in the order of:
+        [batch, in_height, in_width, in_channels].
+    Alternatively, the format could be "NCHW", the data storage order of:
+        [batch, in_channels, in_height, in_width].
+orig_input: The original input tensor.
+orig_output: The original output tensor.
+grad: 4-D.  Gradients w.r.t. the output of `adaptive_max_pool`.
+output: Gradients w.r.t. the input to `ataptive_max_pool`.
+)doc");
+
+// --------------------------------------------------------------------------
+
 REGISTER_OP("AvgPool")
     .Input("value: T")
     .Output("output: T")

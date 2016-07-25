@@ -361,6 +361,16 @@ def _MaxPoolGrad(op, grad):
                                    data_format=op.get_attr("data_format"))
 
 
+@ops.RegisterGradient("AdaptiveMaxPool")
+def _AdaptiveMaxPoolGrad(op, grad):
+  return gen_nn_ops._adaptive_max_pool_grad(
+          op.inputs[0],
+          op.outputs[0],
+          grad,
+          op.get_attr("output_shape"),
+          data_format=op.get_attr("data_format"))
+
+
 @ops.RegisterGradient("BatchNormWithGlobalNormalization")
 def _BatchNormWithGlobalNormalizationGrad(op, grad):
   """Return the gradients for the 5 inputs of BatchNormWithGlobalNormalization.

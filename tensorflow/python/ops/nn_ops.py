@@ -772,6 +772,48 @@ ops.RegisterShape("AvgPool")(common_shapes.avg_pool_shape)
 ops.RegisterShape("MaxPool")(common_shapes.max_pool_shape)
 
 
+@ops.RegisterShape("AdaptiveMaxPool")
+def adaptive_pooling_shape(op):
+  input_shape = op.inputs[0].get_shape().with_rank(4)
+  try:
+    data_format = op.get_attr("data_format")
+  except ValueError:
+    data_format = None
+
+  if data_format == b"NCHW":
+    # Convert input shape to the default NHWC for inference.
+    input_shape = [input_shape[0], input_shape[2], input_shape[3],
+             input_shape[1]]
+    out_batch, out_depth, out_rows, out_cols = op.get_attr("output_shape")
+  else:
+    out_batch, out_rows, out_cols, out_depth = op.get_attr("output_shape")
+
+  batch_size = input_shape[0]
+  in_rows = input_shape[1]
+  in_cols = input_shape[2]
+  depth = input_shape[3]
+
+  if out_batch != -1:
+    raise ValueError(
+      "Adaptive pooling is not yet supported on the batch dimension.")
+  if out_depth != -1:
+    raise ValueError(
+      "Adaptive pooling is not yet supported on the batch dimension.")
+
+  if out_rows <= 0:
+    out_rows = in_rows
+  if out_cols <= 0:
+    out_cols = in_cols
+
+  output_shape = [batch_size, out_rows, out_cols, depth]
+
+  if data_format == b"NCHW":
+    output_shape = [output_shape[0], output_shape[3], output_shape[1],
+            output_shape[2]]
+
+  return [tensor_shape.TensorShape(output_shape)]
+
+
 @ops.RegisterShape("MaxPoolWithArgmax")
 def _MaxPoolWithArgMaxShape(op):
   """Shape function for MaxPoolWithArgmax op."""
@@ -842,6 +884,7 @@ def _DepthwiseConv2dNativeBackpropInputShape(op):
 
 @ops.RegisterShape("MaxPoolGrad")
 @ops.RegisterShape("MaxPoolGradWithArgmax")
+@ops.RegisterShape("AdaptiveMaxPoolGrad")
 def _MaxPoolGradShape(op):
   """Shape function for the MaxPoolGrad op."""
   orig_input_shape = op.inputs[0].get_shape().with_rank(4)

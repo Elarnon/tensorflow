@@ -1433,6 +1433,8 @@ tf_cuda_cc_test(
 tf_kernel_library(
     name = "pooling_ops",
     srcs = [
+        "adaptive_maxpooling_op.cc",
+        "adaptive_pooling_ops_common.cc",
         "avgpooling_op.cc",
         "cudnn_pooling_gpu.cc",
         "maxpooling_op.cc",
@@ -1440,12 +1442,15 @@ tf_kernel_library(
         "pooling_ops_common.cc",
     ],
     hdrs = [
+        "adaptive_maxpooling_op.h",
+        "adaptive_pooling_ops_common.h",
         "avgpooling_op.h",
         "cudnn_pooling_gpu.h",
         "maxpooling_op.h",
         "pooling_ops_common.h",
     ],
     gpu_srcs = [
+        "adaptive_maxpooling_op.h",
         "avgpooling_op.h",
         "avgpooling_op_gpu.cu.cc",
         "maxpooling_op.h",
@@ -1471,6 +1476,8 @@ tf_kernel_library(
 cc_library(
     name = "pooling_ops_hdrs",
     hdrs = [
+        "adaptive_maxpooling_op.h",
+        "adaptive_pooling_ops_common.h",
         "avgpooling_op.h",
         "maxpooling_op.h",
         "pooling_ops_common.h",
