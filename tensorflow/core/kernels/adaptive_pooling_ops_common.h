@@ -26,7 +26,7 @@
 
 namespace tensorflow {
 
-typedef Eigen::GpuDevice GPUDevice;
+typedef Eigen::ThreadPoolDevice CPUDevice;
 
 // A helper class to manage sizes and shapes for adaptive pooling operations.
 struct AdaptivePoolParameters {
@@ -51,10 +51,14 @@ struct AdaptivePoolParameters {
   TensorFormat data_format;
 };
 
+template<typename Device, typename T>
+class SpatialAdaptiveMaxPoolingOp;
+
 // An implementation of AdaptiveMaxPooling (forward).
-template <typename Device, typename T>
-class SpatialAdaptiveMaxPoolingOp : public UnaryOp<T> {
+template <typename T>
+class SpatialAdaptiveMaxPoolingOp<CPUDevice, T> : public UnaryOp<T> {
  public:
+  typedef CPUDevice Device;
   explicit SpatialAdaptiveMaxPoolingOp(OpKernelConstruction* context) : UnaryOp<T>(context) {
     string data_format;
     OP_REQUIRES_OK(context, context->GetAttr("data_format", &data_format));
@@ -103,69 +107,65 @@ class SpatialAdaptiveMaxPoolingOp : public UnaryOp<T> {
     const DeviceBase::CpuWorkerThreads& worker_threads =
         *(context->device()->tensorflow_cpu_worker_threads());
 
-    if (std::is_same<Device, GPUDevice>::value) {
-      // FIXME
-    } else {
-      // The following code basically does the following:
-      // 1. Flattens the input and output tensors into two dimensional arrays.
-      //    tensor_in_as_matrix:
-      //      depth by (tensor_in_cols * tensor_in_rows * tensor_in_batch)
-      //    output_as_matrix:
-      //      depth by (out_width * out_height * tensor_in_batch)
-      //
-      // 2. Walks through the set of columns in the flattened
-      // tensor_in_as_matrix,
-      //    and updates the corresponding column(s) in output_as_matrix with the
-      //    max value.
-      auto shard = [&params, &in_mat, &out_mat](int64 start, int64 limit) {
-        const int32 in_rows = params.tensor_in_rows;
-        const int32 in_cols = params.tensor_in_cols;
-        const int32 out_height = params.out_height;
-        const int32 out_width = params.out_width;
+    // The following code basically does the following:
+    // 1. Flattens the input and output tensors into two dimensional arrays.
+    //    tensor_in_as_matrix:
+    //      depth by (tensor_in_cols * tensor_in_rows * tensor_in_batch)
+    //    output_as_matrix:
+    //      depth by (out_width * out_height * tensor_in_batch)
+    //
+    // 2. Walks through the set of columns in the flattened
+    // tensor_in_as_matrix,
+    //    and updates the corresponding column(s) in output_as_matrix with the
+    //    max value.
+    auto shard = [&params, &in_mat, &out_mat](int64 start, int64 limit) {
+      const int32 in_rows = params.tensor_in_rows;
+      const int32 in_cols = params.tensor_in_cols;
+      const int32 out_height = params.out_height;
+      const int32 out_width = params.out_width;
 
-        {
-          // Initialize the output tensor with MIN<T>
-          const int32 output_image_size = out_height * out_width * params.depth;
-          EigenMatrixMap out_shard(out_mat.data() + start * output_image_size,
-                                   1, (limit - start) * output_image_size);
-          out_shard.setConstant(Eigen::NumTraits<T>::lowest());
-        }
+      {
+        // Initialize the output tensor with MIN<T>
+        const int32 output_image_size = out_height * out_width * params.depth;
+        EigenMatrixMap out_shard(out_mat.data() + start * output_image_size,
+                                 1, (limit - start) * output_image_size);
+        out_shard.setConstant(Eigen::NumTraits<T>::lowest());
+      }
 
-        for (int32 b = start; b < limit; ++b) {
-          const int32 out_offset_batch = b * out_height;
-          for (int32 h = 0; h < in_rows; ++h) {
-            // (h_start, h_end) * (w_start, w_end) is the range that the input
-            // vector projects to.
-            const int32 h_start = int32(floor(float(h) / in_rows * out_height));
-            const int32 h_end = int32(ceil(float(h + 1) / in_rows * out_height));
+      for (int32 b = start; b < limit; ++b) {
+        const int32 out_offset_batch = b * out_height;
+        for (int32 h = 0; h < in_rows; ++h) {
+          // (h_start, h_end) * (w_start, w_end) is the range that the input
+          // vector projects to.
+          const int32 h_start = int32(floor(float(h) / in_rows * out_height));
+          const int32 h_end = int32(ceil(float(h + 1) / in_rows * out_height));
 
-            for (int32 w = 0; w < in_cols; ++w) {
-              const int32 w_start = int32(floor(float(w) / in_cols * out_width));
-              const int32 w_end = int32(ceil(float(w + 1) / in_cols * out_width));
+          for (int32 w = 0; w < in_cols; ++w) {
+            const int32 w_start = int32(floor(float(w) / in_cols * out_width));
+            const int32 w_end = int32(ceil(float(w + 1) / in_cols * out_width));
 
-              // compute elementwise max
-              const int32 in_offset = (b * in_rows + h) * in_cols + w;
-              for (int32 ph = h_start; ph < h_end; ++ph) {
-                const int32 out_offset_base =
-                    (out_offset_batch + ph) * out_width;
-                for (int32 pw = w_start; pw < w_end; ++pw) {
-                  const int32 out_offset = out_offset_base + pw;
-                  out_mat.col(out_offset) =
-                      out_mat.col(out_offset).cwiseMax(in_mat.col(in_offset));
-                }
+            // compute elementwise max
+            const int32 in_offset = (b * in_rows + h) * in_cols + w;
+            for (int32 ph = h_start; ph < h_end; ++ph) {
+              const int32 out_offset_base =
+                  (out_offset_batch + ph) * out_width;
+              for (int32 pw = w_start; pw < w_end; ++pw) {
+                const int32 out_offset = out_offset_base + pw;
+                out_mat.col(out_offset) =
+                    out_mat.col(out_offset).cwiseMax(in_mat.col(in_offset));
               }
             }
           }
         }
-      };
+      }
+    };
 
-      // TODO(?) Consider sharding across batch x rows x cols.
-      // TODO(?) Consider a higher resolution shard cost model.
-      const int64 shard_cost =
-          params.tensor_in_rows * params.tensor_in_cols * params.depth;
-      Shard(worker_threads.num_threads, worker_threads.workers,
-            params.tensor_in_batch, shard_cost, shard);
-    }
+    // TODO(?) Consider sharding across batch x rows x cols.
+    // TODO(?) Consider a higher resolution shard cost model.
+    const int64 shard_cost =
+        params.tensor_in_rows * params.tensor_in_cols * params.depth;
+    Shard(worker_threads.num_threads, worker_threads.workers,
+          params.tensor_in_batch, shard_cost, shard);
   }
 
  private:

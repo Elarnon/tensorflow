@@ -19,10 +19,6 @@ limitations under the License.
 
 namespace tensorflow {
 
-namespace functor {
+}  // namespace tensorflow
 
-}
-
-} // namespace tensorflow
-
-#endif // TENSORFLOW_KERNELS_ADAPTIVE_MAXPOOLING_OP_H_
+#endif  // TENSORFLOW_KERNELS_ADAPTIVE_MAXPOOLING_OP_H_

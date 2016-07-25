@@ -1442,7 +1442,6 @@ tf_kernel_library(
         "pooling_ops_common.cc",
     ],
     hdrs = [
-        "adaptive_maxpooling_op.h",
         "adaptive_pooling_ops_common.h",
         "avgpooling_op.h",
         "cudnn_pooling_gpu.h",
@@ -1450,7 +1449,8 @@ tf_kernel_library(
         "pooling_ops_common.h",
     ],
     gpu_srcs = [
-        "adaptive_maxpooling_op.h",
+        "adaptive_maxpooling_op_gpu.cu.cc",
+        "adaptive_maxpooling_op_gpu.h",
         "avgpooling_op.h",
         "avgpooling_op_gpu.cu.cc",
         "maxpooling_op.h",
@@ -1476,7 +1476,6 @@ tf_kernel_library(
 cc_library(
     name = "pooling_ops_hdrs",
     hdrs = [
-        "adaptive_maxpooling_op.h",
         "adaptive_pooling_ops_common.h",
         "avgpooling_op.h",
         "maxpooling_op.h",

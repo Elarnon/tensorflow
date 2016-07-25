@@ -17,13 +17,16 @@ limitations under the License.
 
 #define EIGEN_USE_THREADS
 
-#include "tensorflow/core/kernels/adaptive_maxpooling_op.h"
-
 #include "tensorflow/core/kernels/adaptive_pooling_ops_common.h"
+
+#if GOOGLE_CUDA
+#include "tensorflow/core/kernels/adaptive_maxpooling_op_gpu.h"
+#endif // GOOGLE_CUDA
 
 namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
+typedef Eigen::GpuDevice GPUDevice;
 
 const int kInvalidMaxPoolingIndex = -1;
 
@@ -157,7 +160,10 @@ REGISTER_KERNEL_BUILDER(Name("AdaptiveMaxPool")
 
 
 template<typename Device, typename T>
-class SpatialAdaptiveMaxPoolingGradOp : public OpKernel {
+class SpatialAdaptiveMaxPoolingGradOp;
+
+template<typename T>
+class SpatialAdaptiveMaxPoolingGradOp<CPUDevice, T> : public OpKernel {
  public:
   explicit SpatialAdaptiveMaxPoolingGradOp(OpKernelConstruction* context) : OpKernel(context) {
     string data_format;
@@ -238,4 +244,137 @@ REGISTER_KERNEL_BUILDER(Name("AdaptiveMaxPoolGrad")
                         .TypeConstraint<double>("T"),
                         SpatialAdaptiveMaxPoolingGradOp<CPUDevice, double>);
 
-} // namespace tensorflow
+#if GOOGLE_CUDA
+
+template<typename T>
+class SpatialAdaptiveMaxPoolingOp<GPUDevice, T> : public UnaryOp<T> {
+ public:
+  typedef GPUDevice Device;
+  explicit SpatialAdaptiveMaxPoolingOp(OpKernelConstruction* context) : UnaryOp<T>(context) {
+    string data_format;
+    OP_REQUIRES_OK(context, context->GetAttr("data_format", &data_format));
+    OP_REQUIRES(context, FormatFromString(data_format, &data_format_),
+                errors::InvalidArgument("Invalid data format"));
+    OP_REQUIRES(
+        context, data_format_ == FORMAT_NHWC,
+        errors::InvalidArgument("Default SpatialAdaptiveMaxPoolingOp "
+                                "only supports NHWC on device type ",
+                                DeviceTypeString(context->device_type())));
+    OP_REQUIRES_OK(context, context->GetAttr("output_shape", &shape_));
+    OP_REQUIRES(context, shape_.size() == 4,
+                errors::InvalidArgument("Output shape field must"
+                                        "specify 4 dimensions"));
+    OP_REQUIRES(context, GetTensorDim(shape_, data_format_, 'N') == -1,
+                errors::Unimplemented(
+                    "Adaptive pooling is not yet supported on the batch dimension."));
+    OP_REQUIRES(context, GetTensorDim(shape_, data_format_, 'C') == -1,
+                errors::Unimplemented(
+                    "Adaptive pooling is not yet supported on the depth dimension."));
+  }
+
+  void Compute(OpKernelContext* context) override {
+    const Tensor& tensor_in = context->input(0);
+
+    AdaptivePoolParameters params{context, shape_, data_format_, tensor_in.shape()};
+    if (!context->status().ok()) {
+      return;
+    }
+
+    Tensor* output = nullptr;
+    OP_REQUIRES_OK(context, context->allocate_output(
+        0, params.forward_output_shape(), &output));
+
+    bool status = AdaptiveMaxPoolForwardWithOptionalArgmax(
+        tensor_in.flat<T>().data(), params.tensor_in_batch, params.tensor_in_rows,
+        params.tensor_in_cols, params.depth, params.out_height,
+        params.out_width, output->flat<T>().data(), nullptr, context->eigen_gpu_device());
+    if (!status) {
+      context->SetStatus(
+          errors::Internal("Failed launching AdaptiveMaxPoolForwardWithOptionalArgmax"));
+    }
+  }
+ private:
+  std::vector<int32> shape_;
+  TensorFormat data_format_;
+};
+
+REGISTER_KERNEL_BUILDER(Name("AdaptiveMaxPool")
+                        .Device(DEVICE_GPU)
+                        .TypeConstraint<float>("T"),
+                        SpatialAdaptiveMaxPoolingOp<GPUDevice, float>);
+
+template<typename T>
+class SpatialAdaptiveMaxPoolingGradOp<GPUDevice, T> : public OpKernel {
+ public:
+  typedef GPUDevice Device;
+
+  explicit SpatialAdaptiveMaxPoolingGradOp(OpKernelConstruction* context) : OpKernel(context) {
+    string data_format;
+    OP_REQUIRES_OK(context, context->GetAttr("data_format", &data_format));
+    OP_REQUIRES(context, FormatFromString(data_format, &data_format_),
+                errors::InvalidArgument("Invalid data format"));
+    OP_REQUIRES(
+        context, data_format_ == FORMAT_NHWC,
+        errors::InvalidArgument("Default SpatialAdaptiveMaxPoolingGradOp "
+                                "only supports NHWC on device type ",
+                                DeviceTypeString(context->device_type())));
+    OP_REQUIRES_OK(context, context->GetAttr("output_shape", &shape_));
+    OP_REQUIRES(context, shape_.size() == 4,
+                errors::InvalidArgument("Output shape field must"
+                                        "specify 4 dimensions"));
+    OP_REQUIRES(context, GetTensorDim(shape_, data_format_, 'N') == -1,
+                errors::Unimplemented(
+                    "Adaptive pooling is not yet supported on the batch dimension."));
+    OP_REQUIRES(context, GetTensorDim(shape_, data_format_, 'C') == -1,
+                errors::Unimplemented(
+                    "Adaptive pooling is not yet supported on the depth dimension."));
+  }
+
+  void Compute(OpKernelContext* context) override {
+    const Tensor& tensor_in = context->input(0);
+    const Tensor& tensor_out = context->input(1);
+    const Tensor& out_backprop = context->input(2);
+
+    // For maxpooling, tensor_in should have 4 dimensions.
+    OP_REQUIRES(context, tensor_in.dims() == 4,
+                errors::InvalidArgument("tensor_in must be 4-dimensional"));
+    OP_REQUIRES(context, tensor_out.dims() == 4,
+                errors::InvalidArgument("tensor_in must be 4-dimensional"));
+    // For maxpooling, out_backprop should have 4 dimensions.
+    OP_REQUIRES(context, out_backprop.dims() == 4,
+                errors::InvalidArgument("tensor_in must be 4-dimensional"));
+
+    AdaptivePoolParameters params{context, shape_, FORMAT_NHWC, tensor_in.shape()};
+    if (!context->status().ok()) {
+      return;
+    }
+
+    Tensor* output = nullptr;
+    OP_REQUIRES_OK(context,
+                   context->allocate_output(0, tensor_in.shape(), &output));
+
+    bool status = AdaptiveMaxPoolBackwardNoMask(
+        tensor_in.flat<T>().data(), params.tensor_in_batch,
+        params.tensor_in_rows, params.tensor_in_cols, params.depth,
+        params.out_height, params.out_width,
+        out_backprop.flat<T>().data(),
+        output->flat<T>().data(), context->eigen_gpu_device());
+    if (!status) {
+      context->SetStatus(
+          errors::Internal("Failed launching AdaptiveMaxPoolBackwardNoMask"));
+    }
+  }
+
+ private:
+  std::vector<int32> shape_;
+  TensorFormat data_format_;
+};
+
+REGISTER_KERNEL_BUILDER(Name("AdaptiveMaxPoolGrad")
+                        .Device(DEVICE_GPU)
+                        .TypeConstraint<float>("T"),
+                        SpatialAdaptiveMaxPoolingGradOp<GPUDevice, float>);
+
+#endif  // GOOGLE_CUDA
+
+}  // namespace tensorflow
