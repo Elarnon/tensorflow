@@ -56,6 +56,7 @@ REGISTER_OP("AdaptiveMaxPool")
     .Attr("output_shape: list(int) >= 4")
     .Attr(GetConvnetDataFormatAttrString())
     .Attr("T: {float, half, double} = DT_FLOAT")
+    .SetShapeFn(shape_inference::AdaptivePoolShape)
     .Doc(R"doc(
 Performs adaptive max pooling on the input.
 

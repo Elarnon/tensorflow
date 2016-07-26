@@ -637,6 +637,68 @@ Status Pool3DShape(shape_inference::InferenceContext* c) {
   return Status::OK();
 }
 
+Status AdaptivePoolShape(shape_inference::InferenceContext* c) {
+  const Shape* input_shape;
+  TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));
+
+  string data_format;
+  Status s = c->GetAttr("data_format", &data_format);
+
+  std::vector<int32> out_shape;
+  TF_RETURN_IF_ERROR(c->GetAttr("output_shape", &out_shape));
+  if (out_shape.size() != 4) {
+    return errors::InvalidArgument(
+        "Adaptive pooling requires the out_shape attribute to "
+        "contain 4 values, but got: ",
+        out_shape.size());
+  }
+
+  int32 output_rows, output_cols;
+
+  if (s.ok() && data_format == "NCHW") {
+    // Convert input shape to default NHWC for inference
+    input_shape =
+        c->MakeShape({{c->Dim(input_shape, 0), c->Dim(input_shape, 2),
+                  c->Dim(input_shape, 3), c->Dim(input_shape, 1)}});
+    output_rows = out_shape[2];
+    output_cols = out_shape[3];
+  } else {
+    output_rows = out_shape[1];
+    output_cols = out_shape[2];
+  }
+
+  const Dimension* batch_size_dim = c->Dim(input_shape, 0);
+  const Dimension* in_rows_dim = c->Dim(input_shape, 1);
+  const Dimension* in_cols_dim = c->Dim(input_shape, 2);
+  const Dimension* output_depth_dim = c->Dim(input_shape, 3);
+
+  // At the moment we need to know the values of several fields.
+  TF_RETURN_IF_ERROR(CheckKnownDim(c, in_rows_dim, "in_rows"));
+  TF_RETURN_IF_ERROR(CheckKnownDim(c, in_cols_dim, "in_cols"));
+
+  auto in_rows = c->Value(in_rows_dim);
+  auto in_cols = c->Value(in_cols_dim);
+
+  if (output_rows < 0) {
+    output_rows = in_rows;
+  }
+  if (output_cols < 0) {
+    output_cols = in_cols;
+  }
+
+  const Shape* output_shape;
+  if (data_format == "NCHW") {
+    output_shape = c->MakeShape(
+        {batch_size_dim, output_depth_dim, output_rows, output_cols});
+  } else {
+    output_shape = c->MakeShape(
+        {batch_size_dim, output_rows, output_cols, output_depth_dim});
+  }
+
+  c->set_output(0, output_shape);
+  return Status::OK();
+}
+
 Status UnknownShape(shape_inference::InferenceContext* c) {
   for (int i = 0; i < c->num_outputs(); ++i) {
     c->set_output(i, c->UnknownShape());

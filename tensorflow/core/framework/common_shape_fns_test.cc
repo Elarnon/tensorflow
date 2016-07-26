@@ -581,6 +581,30 @@ TEST(CommonShapeFnsTest, Pool3DShapeTest) {
   INFER_OK(op, "[1,24,24,24,1]", "[d0_0,12,8,6,d0_4]");
 }
 
+TEST(CommonShapeFnsTest, AdaptiveMaxPool2DShapeTest) {
+  ShapeInferenceTestOp op("AdaptiveMaxPool");
+  auto set_op = [&op](const std::vector<int32>& output_shape,
+                      const string& data_format) {
+    TF_CHECK_OK(NodeDefBuilder("test", "AdaptiveMaxPool")
+                    .Input("input", 0, DT_FLOAT)
+                    .Attr("output_shape", output_shape)
+                    .Attr("data_format", data_format)
+                    .Finalize(&op.node_def));
+  };
+
+  set_op({-1, 1, 1, -1}, "NHWC");
+  INFER_OK(op, "[1,2,2,1]", "[d0_0,1,1,d0_3]");
+
+  set_op({-1, 3, 2, -1}, "NHWC");
+  INFER_OK(op, "[1,4,4,1]", "[d0_0,3,2,d0_3]");
+
+  set_op({{-1, -1, 3, 2}}, "VALID", "NCHW");
+  INFER_OK(op, "[1,1,4,4]", "[d0_0,d0_1,3,2]");
+
+  // Invalid rank for input
+  INFER_ERROR("must be rank 4", op, "[4,4]");
+}
+
 TEST(CommonShapeFnsTest, UnknownShapeTest) {
   {
     // Single output

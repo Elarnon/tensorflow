@@ -172,6 +172,9 @@ Status MaxPoolShape(shape_inference::InferenceContext* c);
 // Shape function for 3D Pooling operations.
 Status Pool3DShape(shape_inference::InferenceContext* c);
 
+// Shape function for adaptive pooling operations
+Status AdaptivePoolShape(shape_inference::InferenceContext* c);
+
 // Shape function for use with ops whose output shapes are unknown.
 Status UnknownShape(shape_inference::InferenceContext* c);
 
