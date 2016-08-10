@@ -673,8 +673,8 @@ Status AdaptivePoolShape(shape_inference::InferenceContext* c) {
   const Dimension* output_depth_dim = c->Dim(input_shape, 3);
 
   // At the moment we need to know the values of several fields.
-  TF_RETURN_IF_ERROR(CheckKnownDim(c, in_rows_dim, "in_rows"));
-  TF_RETURN_IF_ERROR(CheckKnownDim(c, in_cols_dim, "in_cols"));
+  TF_RETURN_IF_ERROR(c->ValidateKnownDim(in_rows_dim, "in_rows"));
+  TF_RETURN_IF_ERROR(c->ValidateKnownDim(in_cols_dim, "in_cols"));
 
   auto in_rows = c->Value(in_rows_dim);
   auto in_cols = c->Value(in_cols_dim);
