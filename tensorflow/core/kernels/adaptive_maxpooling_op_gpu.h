@@ -32,19 +32,28 @@ bool AdaptiveMaxPoolForwardWithOptionalArgmax(
     const int height, const int width,
     const int channels, const int pooled_height,
     const int pooled_width, float* top_data,
-    int64* mask, const Eigen::GpuDevice& d);
+    int64* mask, 
+    int64* start_row, int64* num_rows,
+    int64* start_col, int64* num_cols,
+    const Eigen::GpuDevice& d);
 
 bool AdaptiveMaxPoolBackwardNoMask(
     const float* bottom_data, const int batch,
     const int height, const int width,
     const int channels, const int pooled_height,
     const int pooled_width, const float* top_diff,
-    float* bottom_diff, const Eigen::GpuDevice& d);
+    float* bottom_diff, 
+    int64* start_row, int64* num_rows,
+    int64* start_col, int64* num_cols,
+    const Eigen::GpuDevice& d);
 
 bool AdaptiveMaxPoolBackwardWithArgmax(
     const int output_size, const int input_size, const float* top_diff,
     const int64* mask, const int top_offset, const int bottom_offset,
-    float* bottom_diff, const Eigen::GpuDevice& d);
+    float* bottom_diff, 
+    int64* start_row, int64* num_rows,
+    int64* start_col, int64* num_cols,
+    const Eigen::GpuDevice& d);
 
 }  // namespace tensorflow
 

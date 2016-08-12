@@ -52,10 +52,13 @@ Status InputTensorShapeOrUnknown(InferenceContext* c, int input_idx,
 
 REGISTER_OP("AdaptiveMaxPool")
     .Input("input: T")
+    .Input("begin: Index")
+    .Input("size: Index")
     .Output("output: T")
     .Attr("output_shape: list(int) >= 4")
     .Attr(GetConvnetDataFormatAttrString())
     .Attr("T: {float, half, double} = DT_FLOAT")
+    .Attr("Index: {int32, int64}")
     .SetShapeFn(shape_inference::AdaptivePoolShape)
     .Doc(R"doc(
 Performs adaptive max pooling on the input.
@@ -72,12 +75,15 @@ output: The max pooled output tensor.
 
 REGISTER_OP("AdaptiveMaxPoolGrad")
     .Input("orig_input: T")
+    .Input("begin: Index")
+    .Input("size: Index")
     .Input("orig_output: T")
     .Input("grad: T")
     .Output("output: T")
     .Attr("output_shape: list(int) >= 4")
     .Attr(GetConvnetDataFormatAttrString())
     .Attr("T: {float, half} = DT_FLOAT")
+    .Attr("Index: {int32, int64}")
     .Doc(R"doc(
 Computes gradients of the adaptive max pooling function.
 

@@ -45,6 +45,11 @@ struct AdaptivePoolParameters {
   int tensor_in_rows;
   int tensor_in_batch;
 
+  std::vector<int64> begin_rows;
+  std::vector<int64> size_rows;
+  std::vector<int64> begin_cols;
+  std::vector<int64> size_cols;
+
   int64 out_height;
   int64 out_width;
 
@@ -56,10 +61,10 @@ class SpatialAdaptiveMaxPoolingOp;
 
 // An implementation of AdaptiveMaxPooling (forward).
 template <typename T>
-class SpatialAdaptiveMaxPoolingOp<CPUDevice, T> : public UnaryOp<T> {
+class SpatialAdaptiveMaxPoolingOp<CPUDevice, T> : public OpKernel {
  public:
   typedef CPUDevice Device;
-  explicit SpatialAdaptiveMaxPoolingOp(OpKernelConstruction* context) : UnaryOp<T>(context) {
+  explicit SpatialAdaptiveMaxPoolingOp(OpKernelConstruction* context) : OpKernel(context) {
     string data_format;
     OP_REQUIRES_OK(context, context->GetAttr("data_format", &data_format));
     OP_REQUIRES(context, FormatFromString(data_format, &data_format_),
@@ -123,6 +128,10 @@ class SpatialAdaptiveMaxPoolingOp<CPUDevice, T> : public UnaryOp<T> {
       const int32 in_cols = params.tensor_in_cols;
       const int32 out_height = params.out_height;
       const int32 out_width = params.out_width;
+      const std::vector<int64>& begin_rows = params.begin_rows;
+      const std::vector<int64>& size_rows = params.size_rows;
+      const std::vector<int64>& begin_cols = params.begin_cols;
+      const std::vector<int64>& size_cols = params.size_cols;
 
       {
         // Initialize the output tensor with MIN<T>
@@ -134,15 +143,20 @@ class SpatialAdaptiveMaxPoolingOp<CPUDevice, T> : public UnaryOp<T> {
 
       for (int32 b = start; b < limit; ++b) {
         const int32 out_offset_batch = b * out_height;
-        for (int32 h = 0; h < in_rows; ++h) {
+        const int32 start_row = begin_rows[b];
+        const int32 start_col = begin_cols[b];
+        const int32 num_rows = size_rows[b];
+        const int32 num_cols = size_cols[b];
+
+        for (int32 h = 0; h < num_rows; ++h) {
           // (h_start, h_end) * (w_start, w_end) is the range that the input
           // vector projects to.
-          const int32 h_start = int32(floor(float(h) / in_rows * out_height));
-          const int32 h_end = int32(ceil(float(h + 1) / in_rows * out_height));
+          const int32 h_start = start_row + int32(floor(float(h) / num_rows * out_height));
+          const int32 h_end = start_row + int32(ceil(float(h + 1) / num_rows * out_height));
 
-          for (int32 w = 0; w < in_cols; ++w) {
-            const int32 w_start = int32(floor(float(w) / in_cols * out_width));
-            const int32 w_end = int32(ceil(float(w + 1) / in_cols * out_width));
+          for (int32 w = 0; w < num_cols; ++w) {
+            const int32 w_start = start_col + int32(floor(float(w) / num_cols * out_width));
+            const int32 w_end = start_col + int32(ceil(float(w + 1) / num_cols * out_width));
 
             // compute elementwise max
             const int32 in_offset = (b * in_rows + h) * in_cols + w;

@@ -365,10 +365,12 @@ def _MaxPoolGrad(op, grad):
 def _AdaptiveMaxPoolGrad(op, grad):
   return gen_nn_ops._adaptive_max_pool_grad(
           op.inputs[0],
+          op.inputs[1],
+          op.inputs[2],
           op.outputs[0],
           grad,
           op.get_attr("output_shape"),
-          data_format=op.get_attr("data_format"))
+          data_format=op.get_attr("data_format")), None, None
 
 
 @ops.RegisterGradient("BatchNormWithGlobalNormalization")

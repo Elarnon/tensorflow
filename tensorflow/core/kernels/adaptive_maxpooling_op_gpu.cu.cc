@@ -53,16 +53,19 @@ template <typename dtype>
 __global__ void AdaptiveMaxPoolForwardNCHW(
     const int nthreads, const dtype* bottom_data, const int channels,
     const int height, const int width, const int pooled_height,
-    const int pooled_width, dtype* top_data, int64* mask) {
+    const int pooled_width, dtype* top_data,
+    int64* start_row, int64* num_rows,
+    int64* start_col, int64* num_cols,
+    int64* mask) {
   CUDA_1D_KERNEL_LOOP(index, nthreads) {
     int pw = index % pooled_width;
     int ph = (index / pooled_width) % pooled_height;
     int c = (index / pooled_width / pooled_height) % channels;
     int n = index / pooled_width / pooled_height / channels;
-    int hstart = int(floor(float(ph) / height * pooled_height));
-    int wstart = int(floor(float(pw) / width * pooled_width));
-    int hend = int(ceil(float(ph + 1) / height * pooled_height));
-    int wend = int(ceil(float(pw + 1) / width * pooled_width));
+    int hstart = start_row[n] + int(floor(float(ph) / num_rows[n] * pooled_height));
+    int wstart = start_col[n] + int(floor(float(pw) / num_cols[n] * pooled_width));
+    int hend = start_row[n] + int(ceil(float(ph + 1) / num_rows[n] * pooled_height));
+    int wend = start_col[n] + int(ceil(float(pw + 1) / num_cols[n] * pooled_width));
     dtype maxval = -FLT_MAX;
     int maxidx = -1;
     const dtype* bottom_data_n = bottom_data + n * channels * height * width;
@@ -86,16 +89,20 @@ template <typename dtype>
 __global__ void AdaptiveMaxPoolForwardNHWC(
     const int nthreads, const dtype* bottom_data, const int height,
     const int width, const int channels, const int pooled_height,
-    const int pooled_width, dtype* top_data, int64* mask) {
+    const int pooled_width, dtype* top_data, 
+    int64* start_row, int64* num_rows,
+    int64* start_col, int64* num_cols,
+    int64* mask) {
   CUDA_1D_KERNEL_LOOP(index, nthreads) {
+    int b = index / channels / pooled_width / pooled_height;
     int n = index;
     int c = n % channels;
     n /= channels;
-    int wstart = int(floor(float(n % pooled_width) / width * pooled_width));
-    int wend = int(ceil(float((n % pooled_width) + 1) / width * pooled_width));
+    int wstart = start_col[b] + int(floor(float(n % pooled_width) / num_cols[b] * pooled_width));
+    int wend = start_col[b] + int(ceil(float((n % pooled_width) + 1) / num_cols[b] * pooled_width));
     n /= pooled_width;
-    int hstart = int(floor(float(n % pooled_height) / height * pooled_height));
-    int hend = int(ceil(float((n % pooled_height) + 1) / height * pooled_height));
+    int hstart = start_row[b] + int(floor(float(n % pooled_height) / num_rows[b] * pooled_height));
+    int hend = start_row[b] + int(ceil(float((n % pooled_height) + 1) / num_rows[b] * pooled_height));
     n /= pooled_height;
     dtype maxval = Eigen::NumTraits<dtype>::lowest();
     int maxidx = -1;
@@ -120,17 +127,20 @@ template <typename dtype>
 __global__ void AdaptiveMaxPoolBackwardNoMaskNHWC(
     const int nthreads, const dtype* bottom_data, const int height,
     const int width, const int channels, const int pooled_height,
-    const int pooled_width, const dtype* top_diff, dtype* bottom_diff) {
+    const int pooled_width, const dtype* top_diff, dtype* bottom_diff,
+    int64* start_row, int64* num_rows,
+    int64* start_col, int64* num_cols) {
   CUDA_1D_KERNEL_LOOP(index, nthreads) {
+    int b = index / channels / pooled_width / pooled_height;
     // First find out the index to the maximum, since we have no mask.
     int n = index;
     int c = n % channels;
     n /= channels;
-    int wstart = int(floor(float(n % pooled_width) / width * pooled_width));
-    int wend = int(ceil(float((n % pooled_width) + 1) / width * pooled_width));
+    int wstart = start_col[b] + int(floor(float(n % pooled_width) / num_cols[b] * pooled_width));
+    int wend = start_col[b] + int(ceil(float((n % pooled_width) + 1) / num_cols[b] * pooled_width));
     n /= pooled_width;
-    int hstart = int(floor(float(n % pooled_height) / height * pooled_height));
-    int hend = int(ceil(float((n % pooled_height) + 1) / height * pooled_height));
+    int hstart = start_row[b] + int(floor(float(n % pooled_height) / num_rows[b] * pooled_height));
+    int hend = start_row[b] + int(ceil(float((n % pooled_height) + 1) / num_rows[b] * pooled_height));
     n /= pooled_height;
     dtype maxval = Eigen::NumTraits<dtype>::lowest();
     int maxidx = -1;
@@ -190,14 +200,20 @@ bool AdaptiveMaxPoolForwardWithOptionalArgmax(
     const float* bottom_data, const int batch, const int height,
     const int width, const int channels, const int pooled_height,
     const int pooled_width, float* top_data, int64* mask,
+    int64* start_row, int64* num_rows,
+    int64* start_col, int64* num_cols,
     const Eigen::GpuDevice& d) {
   const int kThreadsPerBlock = 1024;
   const int output_size = batch * channels * pooled_height * pooled_width;
 
+  for (int b = 0; b < batch; ++b) {
+    std::cout << start_row[b] << std::endl;
+  }
+
   AdaptiveMaxPoolForwardNHWC<<<(output_size + kThreadsPerBlock - 1) / kThreadsPerBlock,
                        kThreadsPerBlock, 0, d.stream()>>>(
       output_size, bottom_data, height, width, channels, pooled_height,
-      pooled_width, top_data, mask);
+      pooled_width, top_data, start_row, num_rows, start_col, num_cols, mask);
   return d.ok();
 }
 
@@ -205,6 +221,8 @@ bool AdaptiveMaxPoolBackwardNoMask(
     const float* bottom_data, const int batch, const int height,
     const int width, const int channels, const int pooled_height,
     const int pooled_width, const float* top_diff, float* bottom_diff,
+    int64* start_row, int64* num_rows,
+    int64* start_col, int64* num_cols,
     const Eigen::GpuDevice& d) {
   const int kThreadsPerBlock = 1024;
   const int bottom_size = batch * channels * height * width;
@@ -217,7 +235,7 @@ bool AdaptiveMaxPoolBackwardNoMask(
                                   kThreadsPerBlock,
                               kThreadsPerBlock, 0, d.stream()>>>(
       top_size, bottom_data, height, width, channels, pooled_height,
-      pooled_width, top_diff, bottom_diff);
+      pooled_width, top_diff, bottom_diff, start_row, num_rows, start_col, num_cols);
   return d.ok();
 }
 

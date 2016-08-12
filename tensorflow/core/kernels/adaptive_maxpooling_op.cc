@@ -62,6 +62,10 @@ static void SpatialAdaptiveMaxPoolWithArgMaxHelper(
     const int32 in_cols = params.tensor_in_cols;
     const int32 out_height = params.out_height;
     const int32 out_width = params.out_width;
+    const std::vector<int64>& begin_rows = params.begin_rows;
+    const std::vector<int64>& size_rows = params.size_rows;
+    const std::vector<int64>& begin_cols = params.begin_cols;
+    const std::vector<int64>& size_cols = params.size_cols;
 
     {
       // Initializes the output tensor with MIN<T>
@@ -76,15 +80,20 @@ static void SpatialAdaptiveMaxPoolWithArgMaxHelper(
     }
 
     for (int32 b = start; b < limit; ++b) {
-      for (int h = 0; h < in_rows; ++h) {
+      const int32 start_row = begin_rows[b];
+      const int32 start_col = begin_cols[b];
+      const int32 num_rows = size_rows[b];
+      const int32 num_cols = size_cols[b];
+
+      for (int h = 0; h < num_rows; ++h) {
         // (h_start, h_end) * (w_start, w_end) is the range that the input
         // vector projects to.
-        const int h_start = int32(floor(float(h) / in_rows * out_height));
-        const int h_end = int32(ceil(float(h + 1) / in_rows * out_height));
+        const int h_start = start_row + int32(floor(float(h) / num_rows * out_height));
+        const int h_end = start_row + int32(ceil(float(h + 1) / num_rows * out_height));
 
-        for (int w = 0; w < in_cols; ++w) {
-          const int w_start = int32(floor(float(w) / in_cols * out_width));
-          const int w_end = int32(ceil(float(w + 1) / in_cols * out_width));
+        for (int w = 0; w < num_cols; ++w) {
+          const int w_start = start_col + int32(floor(float(w) / num_cols * out_width));
+          const int w_end = start_col + int32(ceil(float(w + 1) / num_cols * out_width));
 
           // compute elementwise max
           const int in_index = (b * in_rows + h) * in_cols + w;
@@ -189,14 +198,14 @@ class SpatialAdaptiveMaxPoolingGradOp<CPUDevice, T> : public OpKernel {
 
   void Compute(OpKernelContext* context) override {
     const Tensor& tensor_in = context->input(0);
-    const Tensor& tensor_out = context->input(1);
-    const Tensor& out_backprop = context->input(2);
+    const Tensor& tensor_out = context->input(3);
+    const Tensor& out_backprop = context->input(4);
 
     // For maxpooling, tensor_in should have 4 dimensions.
     OP_REQUIRES(context, tensor_in.dims() == 4,
                 errors::InvalidArgument("tensor_in must be 4-dimensional"));
     OP_REQUIRES(context, tensor_out.dims() == 4,
-                errors::InvalidArgument("tensor_in must be 4-dimensional"));
+                errors::InvalidArgument("tensor_out must be 4-dimensional"));
     // For maxpooling, out_backprop should have 4 dimensions.
     OP_REQUIRES(context, out_backprop.dims() == 4,
                 errors::InvalidArgument("tensor_in must be 4-dimensional"));
@@ -247,10 +256,10 @@ REGISTER_KERNEL_BUILDER(Name("AdaptiveMaxPoolGrad")
 #if GOOGLE_CUDA
 
 template<typename T>
-class SpatialAdaptiveMaxPoolingOp<GPUDevice, T> : public UnaryOp<T> {
+class SpatialAdaptiveMaxPoolingOp<GPUDevice, T> : public OpKernel {
  public:
   typedef GPUDevice Device;
-  explicit SpatialAdaptiveMaxPoolingOp(OpKernelConstruction* context) : UnaryOp<T>(context) {
+  explicit SpatialAdaptiveMaxPoolingOp(OpKernelConstruction* context) : OpKernel(context) {
     string data_format;
     OP_REQUIRES_OK(context, context->GetAttr("data_format", &data_format));
     OP_REQUIRES(context, FormatFromString(data_format, &data_format_),
@@ -287,7 +296,10 @@ class SpatialAdaptiveMaxPoolingOp<GPUDevice, T> : public UnaryOp<T> {
     bool status = AdaptiveMaxPoolForwardWithOptionalArgmax(
         tensor_in.flat<T>().data(), params.tensor_in_batch, params.tensor_in_rows,
         params.tensor_in_cols, params.depth, params.out_height,
-        params.out_width, output->flat<T>().data(), nullptr, context->eigen_gpu_device());
+        params.out_width, output->flat<T>().data(),  nullptr,
+        params.begin_rows.data(), params.size_rows.data(),
+        params.begin_cols.data(), params.size_cols.data(),
+        context->eigen_gpu_device());
     if (!status) {
       context->SetStatus(
           errors::Internal("Failed launching AdaptiveMaxPoolForwardWithOptionalArgmax"));
@@ -298,10 +310,14 @@ class SpatialAdaptiveMaxPoolingOp<GPUDevice, T> : public UnaryOp<T> {
   TensorFormat data_format_;
 };
 
+/*
 REGISTER_KERNEL_BUILDER(Name("AdaptiveMaxPool")
                         .Device(DEVICE_GPU)
+                        .HostMemory("begin")
+                        .HostMemory("size")
                         .TypeConstraint<float>("T"),
                         SpatialAdaptiveMaxPoolingOp<GPUDevice, float>);
+*/
 
 template<typename T>
 class SpatialAdaptiveMaxPoolingGradOp<GPUDevice, T> : public OpKernel {
@@ -332,14 +348,14 @@ class SpatialAdaptiveMaxPoolingGradOp<GPUDevice, T> : public OpKernel {
 
   void Compute(OpKernelContext* context) override {
     const Tensor& tensor_in = context->input(0);
-    const Tensor& tensor_out = context->input(1);
-    const Tensor& out_backprop = context->input(2);
+    const Tensor& tensor_out = context->input(3);
+    const Tensor& out_backprop = context->input(4);
 
     // For maxpooling, tensor_in should have 4 dimensions.
     OP_REQUIRES(context, tensor_in.dims() == 4,
                 errors::InvalidArgument("tensor_in must be 4-dimensional"));
     OP_REQUIRES(context, tensor_out.dims() == 4,
-                errors::InvalidArgument("tensor_in must be 4-dimensional"));
+                errors::InvalidArgument("tensor_out must be 4-dimensional"));
     // For maxpooling, out_backprop should have 4 dimensions.
     OP_REQUIRES(context, out_backprop.dims() == 4,
                 errors::InvalidArgument("tensor_in must be 4-dimensional"));
@@ -358,7 +374,10 @@ class SpatialAdaptiveMaxPoolingGradOp<GPUDevice, T> : public OpKernel {
         params.tensor_in_rows, params.tensor_in_cols, params.depth,
         params.out_height, params.out_width,
         out_backprop.flat<T>().data(),
-        output->flat<T>().data(), context->eigen_gpu_device());
+        output->flat<T>().data(),
+        params.begin_rows.data(), params.size_rows.data(),
+        params.begin_cols.data(), params.size_cols.data(),
+        context->eigen_gpu_device());
     if (!status) {
       context->SetStatus(
           errors::Internal("Failed launching AdaptiveMaxPoolBackwardNoMask"));
@@ -370,10 +389,14 @@ class SpatialAdaptiveMaxPoolingGradOp<GPUDevice, T> : public OpKernel {
   TensorFormat data_format_;
 };
 
+/*
 REGISTER_KERNEL_BUILDER(Name("AdaptiveMaxPoolGrad")
                         .Device(DEVICE_GPU)
+                        .HostMemory("begin")
+                        .HostMemory("size")
                         .TypeConstraint<float>("T"),
                         SpatialAdaptiveMaxPoolingGradOp<GPUDevice, float>);
+*/
 
 #endif  // GOOGLE_CUDA
 
