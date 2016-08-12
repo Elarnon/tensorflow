@@ -151,15 +151,15 @@ class SpatialAdaptiveMaxPoolingOp<CPUDevice, T> : public OpKernel {
         for (int32 h = 0; h < num_rows; ++h) {
           // (h_start, h_end) * (w_start, w_end) is the range that the input
           // vector projects to.
-          const int32 h_start = start_row + int32(floor(float(h) / num_rows * out_height));
-          const int32 h_end = start_row + int32(ceil(float(h + 1) / num_rows * out_height));
+          const int32 h_start = int32(floor(float(h) / num_rows * out_height));
+          const int32 h_end = int32(ceil(float(h + 1) / num_rows * out_height));
 
           for (int32 w = 0; w < num_cols; ++w) {
-            const int32 w_start = start_col + int32(floor(float(w) / num_cols * out_width));
-            const int32 w_end = start_col + int32(ceil(float(w + 1) / num_cols * out_width));
+            const int32 w_start = int32(floor(float(w) / num_cols * out_width));
+            const int32 w_end = int32(ceil(float(w + 1) / num_cols * out_width));
 
             // compute elementwise max
-            const int32 in_offset = (b * in_rows + h) * in_cols + w;
+            const int32 in_offset = (b * in_rows + h + start_row) * in_cols + w + start_col;
             for (int32 ph = h_start; ph < h_end; ++ph) {
               const int32 out_offset_base =
                   (out_offset_batch + ph) * out_width;

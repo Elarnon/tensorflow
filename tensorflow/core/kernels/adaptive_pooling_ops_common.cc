@@ -105,7 +105,7 @@ AdaptivePoolParameters::AdaptivePoolParameters(OpKernelContext* context,
                                 tensor_in_rows, "] but got ", b));
     OP_REQUIRES(
         context, 0 <= s && b + s <= tensor_in_rows,
-        errors::InvalidArgument("Expected begin[", i, ", 0] in [0, ",
+        errors::InvalidArgument("Expected size[", i, ", 0] in [0, ",
                                 tensor_in_rows - b, "] but got ", s));
   }
 
@@ -122,7 +122,7 @@ AdaptivePoolParameters::AdaptivePoolParameters(OpKernelContext* context,
                                 tensor_in_cols, "] but got ", b));
     OP_REQUIRES(
         context, 0 <= s && b + s <= tensor_in_cols,
-        errors::InvalidArgument("Expected begin[", i, ", 1] in [0, ",
+        errors::InvalidArgument("Expected size[", i, ", 1] in [0, ",
                                 tensor_in_cols - b, "] but got ", s));
   }
 }

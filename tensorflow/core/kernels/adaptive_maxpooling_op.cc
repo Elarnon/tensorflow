@@ -88,15 +88,15 @@ static void SpatialAdaptiveMaxPoolWithArgMaxHelper(
       for (int h = 0; h < num_rows; ++h) {
         // (h_start, h_end) * (w_start, w_end) is the range that the input
         // vector projects to.
-        const int h_start = start_row + int32(floor(float(h) / num_rows * out_height));
-        const int h_end = start_row + int32(ceil(float(h + 1) / num_rows * out_height));
+        const int h_start = int32(floor(float(h) / num_rows * out_height));
+        const int h_end = int32(ceil(float(h + 1) / num_rows * out_height));
 
         for (int w = 0; w < num_cols; ++w) {
-          const int w_start = start_col + int32(floor(float(w) / num_cols * out_width));
-          const int w_end = start_col + int32(ceil(float(w + 1) / num_cols * out_width));
+          const int w_start = int32(floor(float(w) / num_cols * out_width));
+          const int w_end = int32(ceil(float(w + 1) / num_cols * out_width));
 
           // compute elementwise max
-          const int in_index = (b * in_rows + h) * in_cols + w;
+          const int in_index = (b * in_rows + h + start_row) * in_cols + w + start_col;
           for (int ph = h_start; ph < h_end; ++ph) {
             const int out_index_base = (b * out_height + ph) * out_width;
             for (int pw = w_start; pw < w_end; ++pw) {
